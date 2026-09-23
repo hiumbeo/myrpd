@@ -1,47 +1,64 @@
-name: RDP
+name: Linux-RDP
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-      - name: Enable RDP
-        shell: pwsh
+      - name: Update system
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
-          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString "Axiom@2024!" -AsPlainText -Force)
+          sudo apt-get update -y
+          sudo apt-get upgrade -y
+
+      - name: Install XFCE desktop
+        run: |
+          sudo apt-get install -y xfce4 xfce4-goodies xorg dbus-x11 x11-xserver-utils
+
+      - name: Install XRDP
+        run: |
+          sudo apt-get install -y xrdp
+          sudo adduser xrdp ssl-cert
+          sudo sed -i 's/port=3389/port=3390/g' /etc/xrdp/xrdp.ini
+          sudo sed -i 's/allow_channels=true/allow_channels=false/g' /etc/xrdp/xrdp.ini
+
+      - name: Set password for runner
+        run: |
+          sudo useradd -m -s /bin/bash rdpuser || true
+          echo "rdpuser:Axiom@2024!" | sudo chpasswd
+          sudo usermod -aG sudo rdpuser
+
+      - name: Configure XFCE session
+        run: |
+          echo "xfce4-session" > /home/rdpuser/.xsession
+          sudo chown rdpuser:rdpuser /home/rdpuser/.xsession
+
+      - name: Start XRDP
+        run: |
+          sudo systemctl enable xrdp
+          sudo systemctl start xrdp
+          sudo systemctl status xrdp --no-pager
 
       - name: Download bore
-        shell: pwsh
         run: |
-          Invoke-WebRequest https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip -OutFile bore.zip
-          Expand-Archive bore.zip -DestinationPath . -Force
+          wget https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-unknown-linux-musl.tar.gz
+          tar -xzf bore-v0.5.0-x86_64-unknown-linux-musl.tar.gz
 
-      - name: Start tunnel
-        shell: pwsh
+      - name: Start bore tunnel
         run: |
-          $log = "$PWD\bore_out.log"
-          $err = "$PWD\bore_err.log"
-          $proc = Start-Process -FilePath "$PWD\bore.exe" `
-            -ArgumentList "local","3389","--to","bore.pub" `
-            -RedirectStandardOutput $log `
-            -RedirectStandardError $err `
-            -NoNewWindow -PassThru
-          Write-Host "bore PID: $($proc.Id)"
-          Start-Sleep -Seconds 12
-          Write-Host "===== STDOUT ====="
-          if (Test-Path $log) { Get-Content $log }
-          Write-Host "===== STDERR ====="
-          if (Test-Path $err) { Get-Content $err }
-          Write-Host "=================="
-          Write-Host "User: runneradmin"
-          Write-Host "Pass: Axiom@2024!"
-          Write-Host "Tìm dòng 'listening at bore.pub:XXXXX' ở trên"
-          Write-Host "=================="
-          Start-Sleep -Seconds 21600
+          ./bore local 3390 --to bore.pub > bore_out.log 2>&1 &
+          sleep 15
+          echo "===== BORE OUTPUT ====="
+          cat bore_out.log
+          echo "======================="
+          echo "User: rdpuser"
+          echo "Pass: Axiom@2024!"
+          echo "Address: bore.pub:XXXXX (xem dòng 'listening at' ở trên)"
+          echo "======================="
+
+      - name: Keep alive
+        run: |
+          sleep 21600
