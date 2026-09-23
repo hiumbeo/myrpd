@@ -22,24 +22,26 @@ jobs:
         run: |
           Invoke-WebRequest https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip -OutFile bore.zip
           Expand-Archive bore.zip -DestinationPath . -Force
-          Get-ChildItem
 
       - name: Start tunnel
         shell: pwsh
         run: |
-          $out = New-Object System.IO.StreamWriter("$PWD\bore_out.log", $true)
-          $out.AutoFlush = $true
-          $job = Start-Job -ScriptBlock {
-            & "$using:PWD\bore.exe" local 3389 --to bore.pub 2>&1
-          }
-          Start-Sleep -Seconds 15
-          $content = Receive-Job $job -Keep
-          $content | Out-File -FilePath "$PWD\bore_out.log" -Encoding utf8
-          Write-Host "===== BORE OUTPUT ====="
-          Get-Content "$PWD\bore_out.log"
-          Write-Host "======================="
+          $log = "$PWD\bore_out.log"
+          $err = "$PWD\bore_err.log"
+          $proc = Start-Process -FilePath "$PWD\bore.exe" `
+            -ArgumentList "local","3389","--to","bore.pub" `
+            -RedirectStandardOutput $log `
+            -RedirectStandardError $err `
+            -NoNewWindow -PassThru
+          Write-Host "bore PID: $($proc.Id)"
+          Start-Sleep -Seconds 12
+          Write-Host "===== STDOUT ====="
+          if (Test-Path $log) { Get-Content $log }
+          Write-Host "===== STDERR ====="
+          if (Test-Path $err) { Get-Content $err }
+          Write-Host "=================="
           Write-Host "User: runneradmin"
           Write-Host "Pass: Axiom@2024!"
           Write-Host "Tìm dòng 'listening at bore.pub:XXXXX' ở trên"
-          Write-Host "Địa chỉ RDP = bore.pub:XXXXX"
-          Wait-Job $job | Out-Null
+          Write-Host "=================="
+          Start-Sleep -Seconds 21600
