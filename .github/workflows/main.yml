@@ -1,4 +1,4 @@
-name: RDP-Tailscale
+name: RDP
 
 on:
   workflow_dispatch:
@@ -10,26 +10,36 @@ jobs:
 
     steps:
       - name: Enable RDP
+        shell: pwsh
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
           Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString "Axiom@2024!" -AsPlainText -Force)
 
-      - name: Install Tailscale
+      - name: Download bore
+        shell: pwsh
         run: |
-          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
-          Start-Process -Wait -FilePath .\tailscale-setup.exe -ArgumentList "/quiet"
-          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey ${{ secrets.TAILSCALE_AUTH_KEY }} --hostname github-rdp --accept-routes
+          Invoke-WebRequest https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip -OutFile bore.zip
+          Expand-Archive bore.zip -DestinationPath . -Force
+          Get-ChildItem
 
-      - name: Print info
+      - name: Start tunnel
+        shell: pwsh
         run: |
-          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-          Write-Host "=========================================="
-          Write-Host "RDP INFO"
-          Write-Host "=========================================="
-          Write-Host "IP Address: $ip"
-          Write-Host "Username  : runneradmin"
-          Write-Host "Password  : Axiom@2024!"
-          Write-Host "=========================================="
-          Start-Sleep -Seconds 21600
+          $out = New-Object System.IO.StreamWriter("$PWD\bore_out.log", $true)
+          $out.AutoFlush = $true
+          $job = Start-Job -ScriptBlock {
+            & "$using:PWD\bore.exe" local 3389 --to bore.pub 2>&1
+          }
+          Start-Sleep -Seconds 15
+          $content = Receive-Job $job -Keep
+          $content | Out-File -FilePath "$PWD\bore_out.log" -Encoding utf8
+          Write-Host "===== BORE OUTPUT ====="
+          Get-Content "$PWD\bore_out.log"
+          Write-Host "======================="
+          Write-Host "User: runneradmin"
+          Write-Host "Pass: Axiom@2024!"
+          Write-Host "Tìm dòng 'listening at bore.pub:XXXXX' ở trên"
+          Write-Host "Địa chỉ RDP = bore.pub:XXXXX"
+          Wait-Job $job | Out-Null
