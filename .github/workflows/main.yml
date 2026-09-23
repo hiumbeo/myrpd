@@ -24,7 +24,7 @@ jobs:
 
       - name: Print info
         run: |
-          $ip = (tailscale ip -4)
+          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
           Write-Host "=========================================="
           Write-Host "RDP INFO"
           Write-Host "=========================================="
