@@ -1,4 +1,4 @@
-name: RDP-Windows
+name: RDP-Tailscale
 
 on:
   workflow_dispatch:
@@ -9,12 +9,6 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Setup ngrok
-        run: |
-          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-          Expand-Archive ngrok.zip -DestinationPath .
-          .\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-
       - name: Enable RDP
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
@@ -22,23 +16,20 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
           Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString "Axiom@2024!" -AsPlainText -Force)
 
-      - name: Start ngrok TCP tunnel
+      - name: Install Tailscale
         run: |
-          Start-Process -NoNewWindow .\ngrok.exe -ArgumentList "tcp 3389"
-          Start-Sleep -Seconds 10
-          Invoke-RestMethod http://localhost:4040/api/tunnels | ConvertTo-Json
+          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
+          Start-Process -Wait -FilePath .\tailscale-setup.exe -ArgumentList "/quiet"
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey ${{ secrets.TAILSCALE_AUTH_KEY }} --hostname github-rdp --accept-routes
 
-      - name: Keep alive
+      - name: Print info
         run: |
+          $ip = (tailscale ip -4)
           Write-Host "=========================================="
-          Write-Host "RDP INFO:"
-          Write-Host "User: runneradmin"
-          Write-Host "Pass: Axiom@2024!"
-          Write-Host "Server: chạy lệnh bên dưới để lấy link"
-          Write-Host "  curl http://localhost:4040/api/tunnels"
+          Write-Host "RDP INFO"
           Write-Host "=========================================="
-          $env:NGROK_URL = (Invoke-RestMethod http://localhost:4040/api/tunnels).tunnels[0].public_url
-          Write-Host "Ngrok URL: $env:NGROK_URL"
-          Write-Host "Address: $($env:NGROK_URL -replace 'tcp://','')"
+          Write-Host "IP Address: $ip"
+          Write-Host "Username  : runneradmin"
+          Write-Host "Password  : Axiom@2024!"
           Write-Host "=========================================="
           Start-Sleep -Seconds 21600
